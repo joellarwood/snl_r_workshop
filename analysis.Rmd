@@ -1,0 +1,175 @@
+---
+title: "analysis"
+author: "Joel Larwood"
+date: "23/03/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First I am going to install the tidyverse package
+```{r}
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+```
+
+Now I will import the data 
+```{r}
+data <- readxl::read_xlsx(here::here("data", "facebook_data.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  dplyr::select(-id)
+
+names(data)
+```
+
+Now I want to create scores for my variables
+
+PANAS psotive is items  1, 3, 5, 9, 10, 12, 14, 16, 17
+
+```{r}
+
+data_vars_created <- data %>% 
+  mutate(t1_panas_pos = rowSums(select(data, 
+                                       panas01, 
+                                       panas03, 
+                                       panas05, 
+                                       panas09, 
+                                       panas10, 
+                                       panas12, 
+                                       panas14, 
+                                       panas16, 
+                                       panas17))) %>% 
+  rowid_to_column(var = "id") # add id column to the data based of the row number
+
+data_vars_created %>% # use the data frame called data 
+  select(t1_panas_pos, #keeo thge t1_panas_pos variable
+         id) %>% # keep the id variable
+  glimpse()
+```
+
+```{r}
+
+select_vars <- data_vars_created %>% 
+  select(age, 
+         gender, 
+         education, 
+         active_fbuse, 
+         t1_panas_pos, 
+         cort_t1)
+
+glimpse(select_vars)
+
+```
+
+So now that we have the variables we want to analyse lets look at how much missing data there is and also the distributions 
+
+```{r}
+library(visdat)
+
+visdat::vis_miss(select_vars)
+
+```
+Missing data is not a concern. Lkets look at the histograms 
+
+```{r}
+
+hist(select_vars$age)
+
+hist(select_vars$gender)
+
+hist(select_vars$active_fbuse)
+
+hist(select_vars$t1_panas_pos)
+
+hist(select_vars$cort_t1)
+
+hist(select_vars$education)
+
+```
+
+So theres some issues in the data. We don't know which value is male and which is female. The cortisol is also skewed. 
+
+Here we want to created new/fixed variables and we can use `mutate` to do that 
+
+```{r}
+
+data_to_analyse <- select_vars %>% 
+  mutate(log_cortisol = log(select_vars$cort_t1), 
+         gender_cat = if_else(select_vars$gender == 1, 
+                              "male", 
+                              "female"))
+
+
+hist(data_to_analyse$log_cortisol) # get the histogram for the new cortisol values 
+
+str(data_to_analyse$gender)
+str(data_to_analyse$gender_cat)
+
+```
+
+```{r}
+library(apaTables)
+
+data_to_analyse %>%
+  select(log_cortisol, 
+         t1_panas_pos, 
+         active_fbuse, 
+         age) %>%  
+ apa.cor.table(filename = here::here("output", "correlations.rtf")) 
+
+```
+Formula for regression in R is pretty trhe same as a hand written regression. 
+
+DV ~ Predictor1 + Predictor2 + Predictor3 + Predictor2*Predictor3
+```{r}
+library(interactions)
+library(sjPlot)
+
+reg1 <- lm(log_cortisol ~ gender_cat, 
+           data = data_to_analyse)
+
+reg2 <- lm(log_cortisol ~ gender_cat + age, 
+           data = data_to_analyse)
+
+reg3 <- lm(log_cortisol ~ gender_cat + age + t1_panas_pos, 
+           data = data_to_analyse)
+
+reg4 <- lm(log_cortisol ~ gender_cat + age + t1_panas_pos + active_fbuse, 
+           data = data_to_analyse)
+
+
+sjPlot::tab_model(reg1, reg2, reg2, reg3, reg4, 
+                  show.std = TRUE, 
+                  show.aic = TRUE)
+
+```
+
+```{r}
+mod_example <- lm(active_fbuse ~ gender_cat + t1_panas_pos + gender_cat*t1_panas_pos, 
+                  data = data_to_analyse)
+
+sjPlot::tab_model(mod_example,
+                  show.std = TRUE, 
+                  show.aic = TRUE)
+
+sjPlot::plot_model(mod_example)
+
+```
+
+
+Hypothetically all the main effects were signinficant 
+gender_male = .8 
+t1_panas_pos = 1 
+male*t1_panas_pos = 2 
+
+male cortisol = .8 * 1 + 1 + 2 * 1
+
+female cortisol = .8 + 0 + 1 + 2*0 
+
+
+
+
